@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>韓國周邊成本計算器</title>
+<style>
+:root{
+  --bg:#f6f7fb; --card:#ffffff; --border:#e5e8f0;
+  --fg:#1c2333; --muted:#69718a; --accent:#4f46e5; --accent-soft:#eef0ff;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;background:var(--bg);color:var(--fg);line-height:1.55;}
+header{background:var(--card);border-bottom:1px solid var(--border);padding:14px 20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;position:sticky;top:0;z-index:10;}
+header h1{font-size:19px;margin-right:auto;}
+header .logo{width:30px;height:30px;background:var(--accent);color:#fff;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;}
+nav{display:flex;gap:8px;}
+nav button{border:1px solid var(--border);background:transparent;padding:7px 16px;border-radius:99px;cursor:pointer;font-size:14px;color:var(--muted);}
+nav button.active{background:var(--accent);border-color:var(--accent);color:#fff;}
+main{max-width:1080px;margin:24px auto;padding:0 20px;}
+.panel{display:none;}
+.panel.active{display:block;}
+h2{font-size:17px;margin-bottom:12px;}
+.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:20px;}
+label{font-size:13px;color:var(--muted);display:block;margin-bottom:4px;}
+input[type=text],input[type=number]{width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-size:15px;background:#fff;}
+input:focus{outline:2px solid var(--accent-soft);border-color:var(--accent);}
+.row{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px;}
+.row>div{flex:1;min-width:160px;}
+.btn{background:var(--accent);color:#fff;border:none;padding:10px 22px;border-radius:9px;font-size:15px;cursor:pointer;}
+.btn:hover{filter:brightness(1.08);}
+.btn.secondary{background:#fff;color:var(--fg);border:1px solid var(--border);}
+.btn.small{padding:5px 12px;font-size:13px;}
+.btn.danger{background:#fee2e2;color:#b91c1c;border:none;}
+#fetchStatus{font-size:13px;color:var(--muted);margin-top:8px;min-height:20px;}
+.preview-box{display:flex;gap:16px;align-items:flex-start;margin-top:14px;}
+.preview-box img{width:130px;height:130px;object-fit:cover;border-radius:10px;border:1px solid var(--border);}
+.calc-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-top:14px;}
+.calc-grid .big{font-size:20px;font-weight:700;color:var(--accent);}
+table{width:100%;border-collapse:collapse;font-size:14px;}
+th,td{padding:9px 10px;text-align:left;border-bottom:1px solid var(--border);vertical-align:middle;}
+th{color:var(--muted);font-weight:600;font-size:12.5px;white-space:nowrap;}
+td img.thumb{width:56px;height:56px;object-fit:cover;border-radius:8px;}
+.num{text-align:right;font-variant-numeric:tabular-nums;}
+.batch-card{display:block;width:100%;text-align:left;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px 20px;margin-bottom:12px;cursor:pointer;font-size:15px;}
+.batch-card:hover{border-color:var(--accent);}
+.batch-card .meta{color:var(--muted);font-size:13px;margin-top:4px;}
+.empty{color:var(--muted);text-align:center;padding:40px 0;}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--fg);color:#fff;padding:10px 20px;border-radius:99px;font-size:14px;opacity:0;transition:.25s;pointer-events:none;z-index:50;}
+.toast.show{opacity:1;}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid #fff;border-top-color:transparent;border-radius:50%;animation:s .7s linear infinite;vertical-align:-2px;margin-right:6px;}
+@keyframes s{to{transform:rotate(360deg)}}
+@media(max-width:600px){td,th{padding:7px 6px;} td.hide-sm{display:none;}}
+</style>
+</head>
+<body>
+<header>
+  <span class="logo">K</span>
+  <h1>韓國周邊成本計算器</h1>
+  <nav>
+    <button data-tab="calc" class="active">成本試算</button>
+    <button data-tab="batches">批次列表</button>
+    <button data-tab="settings">設定</button>
+  </nav>
+</header>
+
+<main>
+<!-- ============ 成本試算 ============ -->
+<section id="tab-calc" class="panel active">
+  <div class="card">
+    <h2>貼上商品網址</h2>
+    <div class="row">
+      <div style="flex:3">
+        <label>商品網址（支援 shop-t1.gg 等韓國電商）</label>
+        <input type="text" id="urlInput" placeholder="https://shop-t1.gg/product/...">
+      </div>
+      <div>
+        <label>匯率（TWD per 100 KRW，如 4.75）</label>
+        <input type="number" id="rateInput" step="0.001" placeholder="4.75">
+      </div>
+      <div style="align-self:flex-end">
+        <button class="btn" id="fetchBtn">抓取商品</button>
+      </div>
+    </div>
+    <div id="fetchStatus"></div>
+
+    <div id="previewBox" class="preview-box" style="display:none">
+      <img id="prevImg" alt="商品圖">
+      <div style="flex:1">
+        <div class="row">
+          <div style="flex:3">
+            <label>中文標題（可自行修改）</label>
+            <input type="text" id="titleInput">
+          </div>
+          <div>
+            <label>韓幣定價 (₩)</label>
+            <input type="number" id="krwInput">
+          </div>
+        </div>
+        <div class="calc-grid">
+          <div><label>折算台幣</label><div class="big num" id="outTwd">-</div></div>
+          <div><label>刷卡手續費 (1.5%)</label><div class="big num" id="outFee">-</div></div>
+          <div><label>預估成本</label><div class="big num" id="outCost">-</div></div>
+          <div>
+            <label>台幣訂價（建議 +5%）</label>
+            <input type="number" id="priceInput" step="10">
+          </div>
+        </div>
+        <div style="margin-top:16px;text-align:right">
+          <button class="btn secondary small" id="resetBtn">清除重來</button>
+          <button class="btn" id="saveBtn">儲存到批次</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" id="draftCard" style="display:none">
+    <h2>本批次暫存商品</h2>
+    <table>
+      <thead><tr><th>圖</th><th>標題</th><th class="num">韓幣</th><th class="num">預估成本</th><th class="num">台幣訂價</th><th></th></tr></thead>
+      <tbody id="draftBody"></tbody>
+    </table>
+    <div style="margin-top:14px;text-align:right">
+      <button class="btn secondary small" id="clearDraftBtn">清空暫存</button>
+      <button class="btn" id="publishBtn">發佈為新批次</button>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 批次列表 ============ -->
+<section id="tab-batches" class="panel">
+  <div id="batchList"><div class="empty">載入中…</div></div>
+</section>
+
+<!-- ============ 設定 ============ -->
+<section id="tab-settings" class="panel">
+  <div class="card">
+    <h2>設定</h2>
+    <div class="row">
+      <div><label>API 網址（Google Apps Script Web App URL）</label><input type="text" id="apiUrl" placeholder="https://script.google.com/macros/s/.../exec"></div>
+    </div>
+    <div class="row">
+      <div><label>預設匯率（TWD / 100 KRW）</label><input type="number" id="defRate" step="0.001"></div>
+      <div><label>刷卡手續費 %</label><input type="number" id="feeRate" step="0.1"></div>
+      <div><label>建議加成 %（訂價用）</label><input type="number" id="markupRate" step="1"></div>
+    </div>
+    <p style="font-size:13px;color:var(--muted);margin:10px 0 16px">資料存在你自己的 Google 試算表。API 網址請看專案內的「部署說明」。</p>
+    <button class="btn" id="saveSettings">儲存設定</button>
+  </div>
+</section>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $=s=>document.querySelector(s);
+const FEE_DEFAULT=1.5, MARKUP_DEFAULT=5;
+
+let cfg = JSON.parse(localStorage.getItem('cfg')||'{}');
+cfg.apiUrl ??= ''; cfg.defRate ??= 4.75; cfg.fee ??= FEE_DEFAULT; cfg.markup ??= MARKUP_DEFAULT;
+$('#apiUrl').value=cfg.apiUrl; $('#defRate').value=cfg.defRate; $('#feeRate').value=cfg.fee; $('#markupRate').value=cfg.markup;
+$('#rateInput').value=cfg.defRate;
+
+function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2500);}
+function fmt(n){return n==null?'-':Math.round(n).toLocaleString();}
+
+// tabs
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('active',x===b));
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  $('#tab-'+b.dataset.tab).classList.add('active');
+  if(b.dataset.tab==='batches') loadBatches();
+});
+
+$('#saveSettings').onclick=()=>{
+  cfg.apiUrl=$('#apiUrl').value.trim(); cfg.defRate=+$('#defRate').value||cfg.defRate;
+  cfg.fee=+$('#feeRate').value||FEE_DEFAULT; cfg.markup=+$('#markupRate').value||MARKUP_DEFAULT;
+  localStorage.setItem('cfg',JSON.stringify(cfg));
+  toast('已儲存');
+};
+
+async function api(action, payload){
+  if(!cfg.apiUrl){throw new Error('請先在「設定」填入 API 網址');}
+  const r=await fetch(cfg.apiUrl,{method:'POST',headers:{'Content-Type':'text/plain'},
+    body:JSON.stringify({action,...payload})});
+  const j=await r.json();
+  if(j.error) throw new Error(j.error);
+  return j;
+}
+
+/* ---- 抓取 ---- */
+let current=null;
+$('#fetchBtn').onclick=async()=>{
+  const url=$('#urlInput').value.trim(), rate=+$('#rateInput').value;
+  if(!url) return toast('請先貼上网址');
+  if(!rate) return toast('請輸入匯率');
+  $('#fetchBtn').innerHTML='<span class="spin"></span>抓取中…'; $('#fetchBtn').disabled=true;
+  $('#fetchStatus').textContent='';
+  try{
+    const j=await api('scrape',{url});
+    current={image:j.image,title:j.title_zh||j.title_ko,title_ko:j.title_ko,krw:j.krw,url};
+    $('#prevImg').src=current.image||'';
+    $('#titleInput').value=current.title;
+    $('#krwInput').value=current.krw||'';
+    $('#previewBox').style.display='flex';
+    recalc();
+    if(!current.image&&!current.krw) $('#fetchStatus').textContent='⚠ 部分欄位抓取失敗，請手動補齊';
+  }catch(e){ $('#fetchStatus').textContent='❌ '+e.message; }
+  $('#fetchBtn').innerHTML='抓取商品'; $('#fetchBtn').disabled=false;
+};
+
+['krwInput','rateInput'].forEach(id=>$('#'+id).addEventListener('input',recalc));
+$('#priceInput').addEventListener('input',()=>{});
+
+function recalc(){
+  const krw=+$('#krwInput').value, rate=+$('#rateInput').value;
+  if(!krw||!rate){$('#outTwd').textContent='-';return;}
+  const twd=krw*rate/100;
+  const fee=twd*cfg.fee/100;
+  const cost=twd+fee;
+  $('#outTwd').textContent=fmt(twd);
+  $('#outFee').textContent=fmt(fee);
+  $('#outCost').textContent='$'+fmt(cost);
+  if(!$('#priceInput').value || $('#priceAuto')){
+    $('#priceInput').value=Math.ceil(cost*(1+cfg.markup/100)/10)*10;
+    $('#priceAuto').value='';
+  }
+}
+$('#priceInput').addEventListener('focus',()=>{$('#priceAuto').value=null;});
+
+$('#resetBtn').onclick=()=>{current=null;$('#previewBox').style.display='none';$('#urlInput').value='';$('#priceInput').value='';$('#fetchStatus').textContent='';};
+
+/* ---- 暫存 ---- */
+function getDraft(){return JSON.parse(sessionStorage.getItem('draft')||'[]');}
+function setDraft(d){sessionStorage.setItem('draft',JSON.stringify(d));renderDraft();}
+function renderDraft(){
+  const d=getDraft();
+  $('#draftCard').style.display=d.length?'block':'none';
+  $('#draftBody').innerHTML=d.map((p,i)=>`
+    <tr><td>${p.image?`<img class="thumb" src="${p.image}">`:'-'}</td>
+    <td>${esc(p.title)}</td><td class="num">${fmt(p.krw)}</td>
+    <td class="num">${fmt(p.cost)}</td><td class="num">${fmt(p.price)}</td>
+    <td><button class="btn danger small" onclick="delDraft(${i})">刪除</button></td></tr>`).join('');
+}
+window.delDraft=i=>setDraft(getDraft().filter((_,x)=>x!==i));
+$('#clearDraftBtn').onclick=()=>setDraft([]);
+function esc(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+
+$('#saveBtn').onclick=()=>{
+  const krw=+$('#krwInput').value, rate=+$('#rateInput').value;
+  if(!current||!krw||!rate) return toast('資料不完整');
+  const twd=krw*rate/100, cost=twd*(1+cfg.fee/100);
+  const d=getDraft();
+  d.push({image:current.image,title:$('#titleInput').value||current.title,
+    krw,twd:Math.round(twd),cost:Math.round(cost),price:+$('#priceInput').value||Math.ceil(cost*(1+cfg.markup/100)/10)*10});
+  setDraft(d);
+  toast('已加入暫存'); $('#resetBtn').click();
+};
+
+$('#publishBtn').onclick=async()=>{
+  const d=getDraft();
+  if(!d.length) return toast('沒有商品');
+  const name=prompt('批次主題名稱：'); if(!name) return;
+  const rate=+$('#rateInput').value;
+  try{
+    await api('save',{name,rate,products:d});
+    sessionStorage.removeItem('draft'); renderDraft();
+    $('#name') && ($('#name').value='');
+    toast('✅ 已發佈批次');
+  }catch(e){toast('❌ '+e.message);}
+};
+
+/* ---- 批次列表 ---- */
+async function loadBatches(){
+  const el=$('#batchList');
+  el.innerHTML='<div class="empty">載入中…</div>';
+  try{
+    const j=await api('list',{});
+    if(!j.batches.length){el.innerHTML='<div class="empty">尚無批次，去「成本試算」建立第一個吧！</div>';return;}
+    el.innerHTML=j.batches.map(b=>`
+      <button class="batch-card" onclick="openBatch('${b.id}')">
+        <strong>${esc(b.name)}</strong>
+        <div class="meta">${b.date} ・ 匯率 ${b.rate} ・ ${b.products.length} 件商品</div>
+      </button>`).join('');
+  }catch(e){el.innerHTML=`<div class="empty">❌ ${esc(e.message)}</div>`;}
+}
+async function openBatch(id){
+  const el=$('#batchList');
+  el.innerHTML='<div class="empty">載入中…</div>';
+  try{
+    const b=(await api('get',{id})).batch;
+    const total=b.products.reduce((s,p)=>s+(+p.price||0),0);
+    el.innerHTML=`
+      <button class="btn secondary small" onclick="loadBatches()">← 返回列表</button>
+      <div class="card" style="margin-top:12px">
+        <h2>${esc(b.name)}</h2>
+        <div class="meta" style="color:var(--muted)">日期 ${b.date} ・ 匯率 ${b.rate}（TWD/100KRW）・ ${b.products.length} 件商品 ・ 台幣訂價總計 $${fmt(total)}</div>
+        <table style="margin-top:14px">
+          <thead><tr><th>圖</th><th>商品標題</th><th class="hide-sm">原文標題</th><th class="num">韓幣 ₩</th><th class="num">折算台幣</th><th class="num">預估成本</th><th class="num">台幣訂價</th><th></th></tr></thead>
+          <tbody>${b.products.map((p,i)=>`
+            <tr><td>${p.image?`<img class="thumb" src="${esc(p.image)}">`:'-'}</td>
+            <td>${esc(p.title)}</td><td class="hide-sm" style="color:var(--muted);font-size:12px">${esc(p.title_ko||'')}</td>
+            <td class="num">${fmt(p.krw)}</td><td class="num">${fmt(p.twd)}</td>
+            <td class="num">${fmt(p.cost)}</td><td class="num"><strong>$${fmt(p.price)}</strong></td>
+            <td><button class="btn danger small" onclick="delProduct('${id}','${i}')">刪</button></td></tr>`).join('')}
+          </tbody></table>
+        <div style="margin-top:14px;text-align:right"><button class="btn danger small" onclick="delBatch('${id}')">刪除整個批次</button></div>
+      </div>`;
+  }catch(e){el.innerHTML=`<div class="empty">❌ ${esc(e.message)}</div>`;}
+}
+async function delProduct(id,i){
+  if(!confirm('確定刪除此商品？'))return;
+  try{await api('delProduct',{id,index:i});openBatch(id);}catch(e){toast('❌ '+e.message);}
+}
+async function delBatch(id){
+  if(!confirm('確定刪除整個批次？'))return;
+  try{await api('delBatch',{id});loadBatches();}catch(e){toast('❌ '+e.message);}
+}
+renderDraft();
+</script>
+</body>
+</html>
