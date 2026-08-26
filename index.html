@@ -71,15 +71,16 @@ td img.thumb{width:56px;height:56px;object-fit:cover;border-radius:8px;}
     <h2>貼上商品網址</h2>
     <div class="row">
       <div style="flex:3">
-        <label>商品網址（支援 shop-t1.gg 等韓國電商）</label>
-        <input type="text" id="urlInput" placeholder="https://shop-t1.gg/product/...">
+        <label>商品或分類頁網址（支援 shop-t1.gg 等韓國電商）</label>
+        <input type="text" id="urlInput" placeholder="https://shop-t1.gg/product/... 或 https://shop-t1.gg/category/all/192/">
       </div>
       <div>
-        <label>匯率（TWD per 100 KRW，如 4.75）</label>
-        <input type="number" id="rateInput" step="0.001" placeholder="4.75">
+        <label>匯率（韓幣1000元 = ? 台幣，如 47.5）</label>
+        <input type="number" id="rateInput" step="0.01" placeholder="47.5">
       </div>
-      <div style="align-self:flex-end">
-        <button class="btn" id="fetchBtn">抓取商品</button>
+      <div style="align-self:flex-end;display:flex;gap:8px">
+        <button class="btn secondary" id="fetchAllBtn">抓取整頁商品</button>
+        <button class="btn" id="fetchBtn">抓取單一商品</button>
       </div>
     </div>
     <div id="fetchStatus"></div>
@@ -157,7 +158,7 @@ const $=s=>document.querySelector(s);
 const FEE_DEFAULT=1.5, MARKUP_DEFAULT=5;
 
 let cfg = JSON.parse(localStorage.getItem('cfg')||'{}');
-cfg.apiUrl ??= ''; cfg.defRate ??= 4.75; cfg.fee ??= FEE_DEFAULT; cfg.markup ??= MARKUP_DEFAULT;
+cfg.apiUrl ??= ''; cfg.defRate ??= 47.5; cfg.fee ??= FEE_DEFAULT; cfg.markup ??= MARKUP_DEFAULT;
 $('#apiUrl').value=cfg.apiUrl; $('#defRate').value=cfg.defRate; $('#feeRate').value=cfg.fee; $('#markupRate').value=cfg.markup;
 $('#rateInput').value=cfg.defRate;
 
@@ -190,6 +191,7 @@ async function api(action, payload){
 
 /* ---- 抓取 ---- */
 let current=null;
+function calcCost(krw,rate){const twd=krw/rate;return {twd,fee:twd*cfg.fee/100,cost:twd*(1+cfg.fee/100)};}
 $('#fetchBtn').onclick=async()=>{
   const url=$('#urlInput').value.trim(), rate=+$('#rateInput').value;
   if(!url) return toast('請先貼上网址');
@@ -206,7 +208,34 @@ $('#fetchBtn').onclick=async()=>{
     recalc();
     if(!current.image&&!current.krw) $('#fetchStatus').textContent='⚠ 部分欄位抓取失敗，請手動補齊';
   }catch(e){ $('#fetchStatus').textContent='❌ '+e.message; }
-  $('#fetchBtn').innerHTML='抓取商品'; $('#fetchBtn').disabled=false;
+  $('#fetchBtn').innerHTML='抓取單一商品'; $('#fetchBtn').disabled=false;
+};
+
+/* 整頁抓取：分類頁所有商品直接進暫存 */
+$('#fetchAllBtn').onclick=async()=>{
+  const url=$('#urlInput').value.trim(), rate=+$('#rateInput').value;
+  if(!url) return toast('請先貼上网址');
+  if(!rate) return toast('請輸入匯率');
+  if(!/\/category\//.test(url)) return toast('這不是分類頁網址（應包含 /category/）');
+  $('#fetchAllBtn').innerHTML='<span class="spin"></span>整頁抓取中（需1-2分鐘）…';
+  $('#fetchAllBtn').disabled=true;
+  $('#fetchStatus').textContent='正在翻頁抓取所有商品並翻譯，請稍候…';
+  try{
+    const j=await api('scrapeAll',{url});
+    const d=getDraft();
+    j.products.forEach(p=>{
+      const c=calcCost(p.krw,rate);
+      d.push({image:p.image,title:p.title_zh,title_ko:p.title_ko,krw:p.krw,
+        twd:Math.round(c.twd),cost:Math.round(c.cost),
+        price:Math.ceil(c.cost*(1+cfg.markup/100)/10)*10});
+    });
+    setDraft(d);
+    $('#fetchStatus').textContent='✅ 抓到 '+j.count+' 件商品，已全部加入暫存（可逐筆調整訂價後發佈）';
+    document.querySelectorAll('nav button')[0].click();
+  }catch(e){
+    $('#fetchStatus').textContent='❌ '+e.message;
+  }
+  $('#fetchAllBtn').innerHTML='抓取整頁商品'; $('#fetchAllBtn').disabled=false;
 };
 
 ['krwInput','rateInput'].forEach(id=>$('#'+id).addEventListener('input',recalc));
@@ -215,14 +244,12 @@ $('#priceInput').addEventListener('input',()=>{});
 function recalc(){
   const krw=+$('#krwInput').value, rate=+$('#rateInput').value;
   if(!krw||!rate){$('#outTwd').textContent='-';return;}
-  const twd=krw*rate/100;
-  const fee=twd*cfg.fee/100;
-  const cost=twd+fee;
-  $('#outTwd').textContent=fmt(twd);
-  $('#outFee').textContent=fmt(fee);
-  $('#outCost').textContent='$'+fmt(cost);
+  const c=calcCost(krw,rate);
+  $('#outTwd').textContent=fmt(c.twd);
+  $('#outFee').textContent=fmt(c.fee);
+  $('#outCost').textContent='$'+fmt(c.cost);
   if(!$('#priceInput').value || $('#priceAuto')){
-    $('#priceInput').value=Math.ceil(cost*(1+cfg.markup/100)/10)*10;
+    $('#priceInput').value=Math.ceil(c.cost*(1+cfg.markup/100)/10)*10;
     $('#priceAuto').value='';
   }
 }
@@ -249,10 +276,10 @@ function esc(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>'
 $('#saveBtn').onclick=()=>{
   const krw=+$('#krwInput').value, rate=+$('#rateInput').value;
   if(!current||!krw||!rate) return toast('資料不完整');
-  const twd=krw*rate/100, cost=twd*(1+cfg.fee/100);
+  const c=calcCost(krw,rate);
   const d=getDraft();
   d.push({image:current.image,title:$('#titleInput').value||current.title,
-    krw,twd:Math.round(twd),cost:Math.round(cost),price:+$('#priceInput').value||Math.ceil(cost*(1+cfg.markup/100)/10)*10});
+    krw,twd:Math.round(c.twd),cost:Math.round(c.cost),price:+$('#priceInput').value||Math.ceil(c.cost*(1+cfg.markup/100)/10)*10});
   setDraft(d);
   toast('已加入暫存'); $('#resetBtn').click();
 };

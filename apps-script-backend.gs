@@ -13,6 +13,7 @@ function doPost(e) {
     let result;
     switch (req.action) {
       case 'scrape':    result = scrape(req.url); break;
+      case 'scrapeAll': result = scrapeAll(req.url); break;
       case 'save':      result = saveBatch(req); break;
       case 'list':      result = listBatches(); break;
       case 'get':       result = getBatch(req.id); break;
@@ -41,7 +42,67 @@ function sheet() {
   return sh;
 }
 
-/* ---------------- 抓取商品 ---------------- */
+/* ---------------- 抓取分類頁：全部商品 ---------------- */
+// 支援 Cafe24 商城（如 shop-t1.gg）的分類頁，自動翻頁抓完所有商品
+function scrapeAll(url) {
+  const sep = url.indexOf('?') > -1 ? '&' : '?';
+  const seen = {};
+  const products = [];
+  const MAX_PAGES = 40;
+
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    let html;
+    if (page === 1) {
+      html = UrlFetchApp.fetch(url, { muteHttpExceptions: true }).getContentText();
+    } else {
+      const res = UrlFetchApp.fetch(url + sep + 'page=' + page, { muteHttpExceptions: true });
+      html = res.getContentText();
+    }
+    const items = parseListPage(html);
+    if (!items.length) break; // 沒有更多商品 → 翻頁結束
+    let fresh = 0;
+    for (const it of items) {
+      if (!seen[it.id]) {
+        seen[it.id] = true;
+        products.push(it);
+        fresh++;
+      }
+    }
+    if (fresh === 0) break; // 整頁都是重複的 → 停止
+    Utilities.sleep(300);   // 禮貌性延遲
+  }
+
+  // 批次翻譯（逐筆，Google 免費端點）
+  products.forEach(p => {
+    p.title_ko = p.title;
+    p.title_zh = translate(p.title) || p.title;
+  });
+
+  return { count: products.length, products: products };
+}
+
+// 解析 Cafe24 商品列表：li#anchorBoxId_NNN data-price=...
+function parseListPage(html) {
+  const items = [];
+  const re = /<li id="anchorBoxId_(\d+)"[^>]*data-price="(\d+)"([\s\S]*?)<\/li>/g;
+  let m;
+  while ((m = re.exec(html)) !== null) {
+    const id = m[1], price = parseInt(m[2], 10), body = m[3];
+    const nameM = body.match(/alt="([^"]+)"/);
+    const imgM = body.match(/data-src="(\/\/[^"]+)"/) || body.match(/src="(\/\/[^"]+web\/product[^"]+)"/);
+    const linkM = body.match(/href="(\/product\/[^"]+)"/);
+    items.push({
+      id: id,
+      title: nameM ? decodeEntities(nameM[1]).replace(/\s+/g, ' ').trim() : '',
+      image: imgM ? (imgM[1].indexOf('//') === 0 ? 'https:' + imgM[1] : imgM[1]) : '',
+      krw: price,
+      url: linkM ? linkM[1] : ''
+    });
+  }
+  return items;
+}
+
+/* ---------------- 抓取單一商品頁 ---------------- */
 function scrape(url) {
   const res = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
   const html = res.getContentText();
