@@ -71,8 +71,8 @@ td img.thumb{width:56px;height:56px;object-fit:cover;border-radius:8px;}
     <h2>貼上商品網址</h2>
     <div class="row">
       <div style="flex:3">
-        <label>商品或分類頁網址（支援 shop-t1.gg 等韓國電商）</label>
-        <input type="text" id="urlInput" placeholder="https://shop-t1.gg/product/... 或 https://shop-t1.gg/category/all/192/">
+        <label>商品或列表頁網址（任意韓國電商網址皆可）</label>
+        <input type="text" id="urlInput" placeholder="https://shop-t1.gg/product/... 或任何商品列表網址">
       </div>
       <div>
         <label>匯率（韓幣1000元 = ? 台幣，如 47.5）</label>
@@ -216,13 +216,15 @@ $('#fetchAllBtn').onclick=async()=>{
   const url=$('#urlInput').value.trim(), rate=+$('#rateInput').value;
   if(!url) return toast('請先貼上网址');
   if(!rate) return toast('請輸入匯率');
-  if(!/\/category\//.test(url)) return toast('這不是分類頁網址（應包含 /category/）');
   $('#fetchAllBtn').innerHTML='<span class="spin"></span>整頁抓取中（需1-2分鐘）…';
   $('#fetchAllBtn').disabled=true;
   $('#fetchStatus').textContent='正在翻頁抓取所有商品並翻譯，請稍候…';
   try{
     const j=await api('scrapeAll',{url});
-    const d=getDraft();
+    if(!j.count){
+      $('#fetchStatus').textContent='⚠ 這個網址抓不到商品列表，請改用「抓取單一商品」';
+    }else{
+      const d=getDraft();
     j.products.forEach(p=>{
       const c=calcCost(p.krw,rate);
       d.push({image:p.image,title:p.title_zh,title_ko:p.title_ko,krw:p.krw,
@@ -232,6 +234,7 @@ $('#fetchAllBtn').onclick=async()=>{
     setDraft(d);
     $('#fetchStatus').textContent='✅ 抓到 '+j.count+' 件商品，已全部加入暫存（可逐筆調整訂價後發佈）';
     document.querySelectorAll('nav button')[0].click();
+    }
   }catch(e){
     $('#fetchStatus').textContent='❌ '+e.message;
   }
